@@ -32,4 +32,5 @@ jobs:
           KEY: ${{ secrets.SSHKEY }}
           script: |
             cd tispa-backend
+            chmod +x update.sh
             ./update.sh
