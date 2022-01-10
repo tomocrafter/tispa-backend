@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres
+    restart: always
+    ports:
+      - 5432:5432
+    container_name: pqdb
+    networks:
+      - db_nw
+    environment:
+      POSTGRES_PASSWORD: Passw0rd!
+
+  app:
+    build: .
+    ports:
+      - "8989"
+    networks:
+      - db_nw
+      - app_nw
+    restart: always
+    volumes:
+      - ./:/app
+    depends_on:
+      - db
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: always
+    volumes:
+      - ./cfg/nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - 8888:80
+    networks:
+      - app_nw
+    depends_on:
+      - app
+
+networks:
+  db_nw:
+    driver: bridge
+  app_nw:
+    driver: bridge
