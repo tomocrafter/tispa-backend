@@ -64,6 +64,15 @@ package database <<Database>> {
   }
 }
 
+users ||-d-o{ participants
+users ||-r-o{ group_users
+users ||-o{ expenses
+
+events ||-l-o{ participants
+events ||-u-o{ groups
+events ||-d-o{ schedules
+events ||-o{ expenses
+
 @enduml
 ```
 
