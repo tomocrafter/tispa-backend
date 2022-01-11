@@ -59,8 +59,6 @@ package database <<Database>> {
     category(transportation, food, lodging)
     description
     cost
-    created_at
-    updated_at
   }
 }
 
