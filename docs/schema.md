@@ -15,8 +15,8 @@ package database <<Database>> {
     + id [PK]
     ---
     name
-    started_at
-    ended_at
+    start_at
+    end_at
   }
 
   entity participants {
@@ -47,8 +47,8 @@ package database <<Database>> {
     # group_id [FK]
     name
     description
-    started_at
-    ended_at
+    start_at
+    end_at
   }
 
   entity expenses {
