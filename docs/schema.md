@@ -19,11 +19,11 @@ package database <<Database>> {
     ended_at
   }
 
-  entity event_users {
+  entity participants {
     + id [PK]
     ---
-    # user_id [FK]
     # event_id [FK]
+    # user_id [FK]
   }
 
   entity groups {
@@ -76,7 +76,7 @@ Twitterのアカウントの紐付けもここで管理
 
 イベントを管理する
 
-## `event_users`テーブル
+## `participants`テーブル
 
 イベントに参加するユーザーを管理する
 
