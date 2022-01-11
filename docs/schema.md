@@ -71,6 +71,8 @@ events ||-u-o{ groups
 events ||-d-o{ schedules
 events ||-o{ expenses
 
+group_users ||-o{ groups
+
 @enduml
 ```
 
