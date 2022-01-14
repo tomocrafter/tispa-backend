@@ -1,7 +1,6 @@
 services:
   db:
     image: postgres
-    restart: always
     ports:
       - 5432:5432
     container_name: pqdb
@@ -17,7 +16,6 @@ services:
     networks:
       - db_nw
       - app_nw
-    restart: always
     volumes:
       - ./:/app
     depends_on:
@@ -26,7 +24,6 @@ services:
   nginx:
     image: nginx:latest
     container_name: nginx
-    restart: always
     volumes:
       - ./cfg/nginx.conf:/etc/nginx/nginx.conf
     ports:
