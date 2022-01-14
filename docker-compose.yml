@@ -16,10 +16,12 @@ services:
     networks:
       - db_nw
       - app_nw
+      - redis_nw
     volumes:
       - ./:/app
     depends_on:
       - db
+      - redis
 
   nginx:
     image: nginx:latest
@@ -33,8 +35,21 @@ services:
     depends_on:
       - app
 
+  redis:
+    image: redis:6.2
+    container_name: redis
+    volumes:
+      - redis:/data
+    networks:
+      - redis_nw
+
+volumes:
+  redis:
+
 networks:
   db_nw:
     driver: bridge
   app_nw:
+    driver: bridge
+  redis_nw:
     driver: bridge
