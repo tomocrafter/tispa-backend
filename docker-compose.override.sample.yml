@@ -1,0 +1,21 @@
+x-shared-environment: &shared-environment
+  DATABASE_URL: postgresql://postgres:Passw0rd!@localhost:5432/dev
+  REDIS_URL: redis://redis/
+  # Twitter keys
+  TWITTER_CONSUMER_KEY: <Fill Here>
+  TWITTER_CONSUMER_SECRET: <Fill Here>
+
+services:
+  app:
+    environment: *shared-environment
+
+#  app-test:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile.development
+#    ports:
+#      - "8989:8989"
+#    volumes:
+#      - .:/app
+#    command: /bin/bash
+#    environment: *shared-environment
