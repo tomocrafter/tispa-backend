@@ -1,19 +1,28 @@
-use axum::{response::Html, routing::get, Router};
+use anyhow::{Context, Result};
+use async_redis_session::RedisSessionStore;
+use axum::{response::Html, routing::get, AddExtensionLayer, Router};
 use std::net::SocketAddr;
 use tokio::signal;
 
 #[tokio::main]
-async fn main() {
-    let app = Router::new().route("/", get(handler));
-
+async fn main() -> Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], 8989));
     println!("listening on {}", addr);
+
+    let redis_url = std::env::var("REDIS_URL").context("you must set redis url")?;
+
+    let store = RedisSessionStore::new(redis_url)?;
+
+    let app = Router::new()
+        .route("/", get(handler))
+        .layer(AddExtensionLayer::new(store));
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
+        .await?;
+
+    Ok(())
 }
 
 async fn handler() -> Html<&'static str> {
