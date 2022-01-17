@@ -1,7 +1,10 @@
+#!/bin/bash
+
 # https://dev.to/wassimbj/deploy-your-docker-containers-with-zero-downtime-o3f
 
 service_name=app
 nginx_container_name=nginx
+rust_version=$(cat rust-toolchain)
 
 reload_nginx() {
   docker exec $nginx_container_name /usr/sbin/nginx -s reload
@@ -24,13 +27,24 @@ server_status() {
 
 update_server() {
   old_container_id=$(docker ps -f name=$service_name -q | tail -n1)
+  if [[ -z $old_container_id ]]; then
+    echo "OLD ID NOT FOUND, QUIT !"
+    exit
+  fi
+
+  docker build -t tispa/backend-builder:rust-$rust_version -f Dockerfile.builder .
+  exit_status=$?
+  if [ $exit_status -eq 1 ]; then
+    echo "FAILED TO BUILD BUILDER IMAGE"
+    exit
+  fi
 
   # create a new instance of the server
   docker compose up --build -d --no-deps --scale $service_name=2 --no-recreate $service_name
   new_container_id=$(docker ps -f name=$service_name -q | head -n1)
 
   if [[ -z $new_container_id ]]; then
-    echo "ID NOT FOUND, QUIT !"
+    echo "NEW ID NOT FOUND, QUIT !"
     exit
   fi
   new_container_port=$(docker port $new_container_id | cut -d " " -f3 | cut -d ":" -f2)
