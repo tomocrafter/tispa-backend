@@ -32,8 +32,6 @@ services:
       - 8888:80
     networks:
       - app_nw
-    depends_on:
-      - app
 
   redis:
     image: redis:6.2
