@@ -1,3 +1,11 @@
-FROM tispa/backend-builder:rust-1.58.0 AS tispa-builder
+FROM rust:1.58.0 as build-env
 
 WORKDIR /app
+
+COPY ./Cargo.toml ./Cargo.lock  ./
+COPY ./src ./src
+
+RUN rustup component add rustfmt
+RUN rustup component add clippy
+
+RUN cargo build
