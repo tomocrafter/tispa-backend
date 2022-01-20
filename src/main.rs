@@ -1,21 +1,60 @@
-use anyhow::{Context, Result};
+use anyhow::Context as _;
 use async_redis_session::RedisSessionStore;
-use axum::{response::Html, routing::get, AddExtensionLayer, Router};
+
+use axum::{http::Request, response::Html, routing::get, AddExtensionLayer, Router};
+
 use std::net::SocketAddr;
 use tokio::signal;
+use tower::ServiceBuilder;
+use tower_http::{
+    request_id::{MakeRequestId, RequestId},
+    trace::TraceLayer,
+    ServiceBuilderExt,
+};
+use tracing::{debug, info};
+use uuid::Uuid;
+
+mod errors;
+mod oauth;
+mod routing;
+mod twitter;
+
+static COOKIE_NAME: &str = "SESSION_ID";
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
+    // Set the RUST_LOG, if it hasn't been explicitly defined
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", "tispa_backend=debug,tower_http=debug")
+    }
+    tracing_subscriber::fmt::init();
+
     let addr = SocketAddr::from(([0, 0, 0, 0], 8989));
-    println!("listening on {}", addr);
+    info!("listening on {}", addr);
 
     let redis_url = std::env::var("REDIS_URL").context("you must set redis url")?;
 
     let store = RedisSessionStore::new(redis_url)?;
 
+    let oauth_client = oauth::oauth_client()?;
+
     let app = Router::new()
         .route("/", get(handler))
-        .layer(AddExtensionLayer::new(store));
+        .nest(
+            "/auth",
+            Router::new()
+                .route("/twitter", get(routing::oauth::twitter_auth))
+                .route("/callback", get(routing::oauth::callback)),
+        )
+        .route("/protected", get(routing::oauth::protected))
+        .route("/logout", get(routing::oauth::logout))
+        .layer(
+            ServiceBuilder::new()
+                .set_x_request_id(MakeRequestUuid)
+                .layer(AddExtensionLayer::new(store))
+                .layer(AddExtensionLayer::new(oauth_client))
+                .layer(TraceLayer::new_for_http()),
+        );
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -25,6 +64,17 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+pub struct MakeRequestUuid;
+
+impl MakeRequestId for MakeRequestUuid {
+    fn make_request_id<B>(&mut self, _request: &Request<B>) -> Option<RequestId> {
+        let request_id = Uuid::new_v4().to_string().parse().unwrap();
+        Some(RequestId::new(request_id))
+    }
+}
+
+#[tracing::instrument]
 async fn handler() -> Html<&'static str> {
     Html("<h1>Hello, World!</h1>")
 }
@@ -52,5 +102,5 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 
-    println!("signal received, starting graceful shutdown");
+    debug!("signal received, starting graceful shutdown");
 }

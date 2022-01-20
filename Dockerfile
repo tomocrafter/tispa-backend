@@ -1,4 +1,11 @@
-FROM tispa/backend-builder:rust-1.58.0 AS tispa-builder
+FROM rust:1.58.0 as build-env
+
+WORKDIR /app
+
+COPY ./Cargo.toml ./Cargo.lock  ./
+COPY ./src ./src
+
+RUN cargo build --release
 
 FROM gcr.io/distroless/cc
 COPY --from=tispa-builder /app/target/release/tispa-backend /
