@@ -8,7 +8,19 @@ package database <<Database>> {
     + id [PK]
     ---
     name
-    twitter_id
+    screen_name
+    profile_image_url
+  }
+
+  entity accounts {
+    + id [PK]
+    ---
+    # user_id [FK]
+    provider(twitter)
+    provider_account_id
+    access_token
+    refresh_token
+    expires_at
   }
 
   entity events {
@@ -62,6 +74,7 @@ package database <<Database>> {
   }
 }
 
+users ||-o{ accounts
 users ||-d-o{ participants
 users ||-r-o{ group_users
 users ||-o{ expenses
@@ -80,8 +93,13 @@ group_users ||-o{ groups
 
 ## `users`テーブル
 
-ユーザー情報を管理する
-Twitterのアカウントの紐付けもここで管理
+ユーザーのプロフィールを管理する
+
+## `accounts` テーブル
+
+ソーシャルログインを管理する
+
+Twitter のアカウントの紐付けはここで管理
 
 ## `events`テーブル
 
