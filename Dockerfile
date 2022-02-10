@@ -8,6 +8,6 @@ COPY ./src ./src
 RUN cargo build --release
 
 FROM gcr.io/distroless/cc
-COPY --from=tispa-builder /app/target/release/tispa-backend /
+COPY --from=build-env /app/target/release/tispa-backend /
 
 CMD ["./tispa-backend"]

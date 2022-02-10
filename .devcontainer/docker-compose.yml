@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres
+    restart: unless-stopped
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: Passw0rd!
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sleep infinity
+    volumes:
+      - ../:/app:cached
+      - target-data:/app/target
+    depends_on:
+      - db
+      - redis
+    network_mode: service:db
+
+  redis:
+    image: redis:6.2
+    volumes:
+      - redis-data:/data
+
+volumes:
+  target-data:
+  redis-data:
+  postgres-data:
