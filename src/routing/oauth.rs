@@ -1,5 +1,4 @@
-use std::time::Duration;
-
+use anyhow::Context;
 use async_redis_session::RedisSessionStore;
 use async_session::{async_trait, Session, SessionStore};
 use axum::{
@@ -16,10 +15,10 @@ use oauth2::{
     PkceCodeChallenge, Scope, TokenResponse,
 };
 use serde::Deserialize;
-use tracing::{debug, trace};
+use std::time::Duration;
 
 use crate::{
-    errors::{AuthError, Result, ServerError},
+    errors::{Result, ServerError},
     oauth::TWITTER_CLIENT_ID,
     twitter::{TwitterUser, V2TwitterResponse},
     COOKIE_NAME,
@@ -52,16 +51,16 @@ pub async fn twitter_auth(
     session.expire_in(Duration::from_secs(60 * 60));
     session
         .insert("csrf_state", csrf_state)
-        .map_err(ServerError::FailedToSerializeSessionValue)?;
+        .context("failed to put csrf_state to session")?;
     session
         .insert("pkce_code_verifier", pkce_code_verifier)
-        .map_err(ServerError::FailedToSerializeSessionValue)?;
+        .context("failed to put pkce_code_verifier to session")?;
 
     let cookie_value = store
         .store_session(session)
         .await
-        .map_err(ServerError::Session)?
-        .unwrap();
+        .context("failed to store session: {}")?
+        .context("cookie value already extracted")?;
     let cookie = format!("{}={}; SameSite=Lax; Path=/", COOKIE_NAME, cookie_value);
 
     let mut headers = HeaderMap::new();
@@ -77,42 +76,44 @@ pub async fn callback(
     Extension(store): Extension<RedisSessionStore>,
     Extension(oauth_client): Extension<BasicClient>,
     TypedHeader(cookies): TypedHeader<headers::Cookie>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<impl IntoResponse> {
     let code = AuthorizationCode::new(query.code);
     let state = CsrfToken::new(query.state);
 
-    let session_id = cookies.get(COOKIE_NAME).ok_or(AuthError::Redirect)?;
+    let session_id = match cookies.get(COOKIE_NAME) {
+        Some(id) => id,
+        None => return Ok(Redirect::temporary("/".parse().unwrap()).into_response()),
+    };
     let session = store
         .load_session(session_id.to_string())
         .await
-        .map_err(ServerError::Session)?
-        .ok_or(AuthError::Redirect)?;
+        .context("failed to store session")?;
+    let session = match session {
+        Some(session) => session,
+        None => return Ok(Redirect::temporary("/".parse().unwrap()).into_response()),
+    };
 
-    debug!("checking csrf token");
-
-    let csrf_state = session
-        .get::<CsrfToken>("csrf_state")
-        .ok_or(AuthError::Redirect)?;
+    let csrf_state = match session.get::<CsrfToken>("csrf_state") {
+        Some(csrf_state) => csrf_state,
+        None => return Ok(Redirect::temporary("/".parse().unwrap()).into_response()),
+    };
     if state.secret() != csrf_state.secret() {
-        trace!("csrf mis match");
-        return Err(AuthError::CSRFMisMatch);
+        return Err(ServerError::Unauthorized);
     }
 
-    debug!("requesting token to twitter authentication server");
+    let pkce_code_verifier = match session.get("pkce_code_verifier") {
+        Some(pkce_code_verifier) => pkce_code_verifier,
+        None => return Ok(Redirect::temporary("/".parse().unwrap()).into_response()),
+    };
 
     // Get an auth token
     let token = oauth_client
         .exchange_code(code)
         .add_extra_param("client_id", &*TWITTER_CLIENT_ID)
-        .set_pkce_verifier(
-            session
-                .get("pkce_code_verifier")
-                .ok_or(AuthError::Redirect)?,
-        )
+        .set_pkce_verifier(pkce_code_verifier)
         .request_async(async_http_client)
-        .await?;
-
-    debug!(?token, "got token");
+        .await
+        .context("failed to exchange code with twitter")?;
 
     let client = reqwest::Client::new();
     let user_data = client
@@ -121,10 +122,10 @@ pub async fn callback(
         .query(&[("user.fields", "profile_image_url")])
         .send()
         .await
-        .map_err(ServerError::TwitterResource)?
+        .context("failed to request token to twitter")?
         .json::<V2TwitterResponse<TwitterUser>>()
         .await
-        .map_err(ServerError::TwitterResource)?;
+        .context("failed to parse response json")?;
 
     let mut session = Session::new();
     session.insert("user", &user_data.data).unwrap();
@@ -161,13 +162,21 @@ pub async fn logout(
     Redirect::to("/".parse().unwrap())
 }
 
+pub struct RedirectToIndex;
+
+impl IntoResponse for RedirectToIndex {
+    fn into_response(self) -> axum::response::Response {
+        Redirect::temporary("/".parse().unwrap()).into_response()
+    }
+}
+
 #[async_trait]
 impl<B> FromRequest<B> for TwitterUser
 where
     B: Send,
 {
     // If anything goes wrong or no session is found, redirect to the auth page
-    type Rejection = AuthError;
+    type Rejection = RedirectToIndex;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
         let Extension(store) = Extension::<RedisSessionStore>::from_request(req)
@@ -178,22 +187,20 @@ where
             .await
             .map_err(|e| match *e.name() {
                 header::COOKIE => match e.reason() {
-                    TypedHeaderRejectionReason::Missing => AuthError::Redirect,
+                    TypedHeaderRejectionReason::Missing => RedirectToIndex,
                     _ => panic!("unexpected error getting Cookie header(s): {}", e),
                 },
                 _ => panic!("unexpected error getting cookies: {}", e),
             })?;
-        let session_cookie = cookies.get(COOKIE_NAME).ok_or(AuthError::Redirect)?;
+        let session_cookie = cookies.get(COOKIE_NAME).ok_or(RedirectToIndex)?;
 
         let session = store
             .load_session(session_cookie.to_string())
             .await
             .unwrap()
-            .ok_or(AuthError::Redirect)?;
+            .ok_or(RedirectToIndex)?;
 
-        let user = session
-            .get::<TwitterUser>("user")
-            .ok_or(AuthError::Redirect)?;
+        let user = session.get::<TwitterUser>("user").ok_or(RedirectToIndex)?;
 
         Ok(user)
     }

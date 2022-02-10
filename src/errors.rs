@@ -1,92 +1,45 @@
-use async_session::serde_json::{self, json};
-use axum::{
-    response::{IntoResponse, Redirect, Response},
-    Json,
-};
-use oauth2::{basic::BasicErrorResponseType, RequestTokenError, StandardErrorResponse};
+use axum::response::{IntoResponse, Response};
 use reqwest::StatusCode;
 use thiserror::Error;
-use tracing::debug;
-use anyhow::anyhow;
+use tracing::error;
 
 #[derive(Error, Debug)]
 pub enum ServerError {
-    #[error("session value serialize error")]
-    FailedToSerializeSessionValue(#[source] serde_json::Error),
-    #[error("session error")]
-    Session(#[source] anyhow::Error),
-    #[error("twitter resource error")]
-    TwitterResource(#[source] reqwest::Error),
+    /// Return `401 Unauthorized`
+    #[error("authentication required")]
+    Unauthorized,
+
+    /// Return `403 Forbidden`
+    #[error("user may not perform that action")]
+    Forbidden,
+
+    /// Return `404 Not Found`
+    #[error("request path not found")]
+    NotFound,
+
+    #[error("an internal server error occurred")]
+    Anyhow(#[from] anyhow::Error),
 }
 
 impl ServerError {
-    pub fn status(&self) -> StatusCode {
-        StatusCode::INTERNAL_SERVER_ERROR
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Anyhow(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
     }
 }
 
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
+        if let Self::Anyhow(ref e) = self {
+            error!("Generic error: {:?}", e);
+        }
 
-        let message = format!("{}", &self);
-
-        let status = self.status();
-
-        let a = anyhow!(self);
-        debug!(error = %a, "ServerError occurred");
-
-        let body = Json(json!({
-            "cause": message,
-        }));
-
-        (status, body).into_response()
+        (self.status_code(), self.to_string()).into_response()
     }
 }
 
 pub type Result<T, E = ServerError> = std::result::Result<T, E>;
-
-#[derive(Error, Debug)]
-pub enum AuthError {
-    #[error("redirect")]
-    Redirect,
-    #[error("csrf mis match")]
-    CSRFMisMatch,
-    #[error("server error")]
-    ServerError(#[from] ServerError),
-    #[error("token request")]
-    TokenRequest(
-        #[from]
-        RequestTokenError<
-            oauth2::reqwest::Error<reqwest::Error>,
-            StandardErrorResponse<BasicErrorResponseType>,
-        >,
-    ),
-}
-
-impl IntoResponse for AuthError {
-    fn into_response(self) -> Response {
-        debug!(error = %self, "AuthError occurred");
-
-        match self {
-            AuthError::Redirect => Redirect::temporary("/".parse().unwrap()).into_response(),
-            AuthError::CSRFMisMatch => (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "cause": "csrf mis match",
-                })),
-            )
-                .into_response(),
-            AuthError::ServerError(se) => se.into_response(),
-            AuthError::TokenRequest(err) => (
-                match err {
-                    RequestTokenError::ServerResponse(_) => StatusCode::BAD_REQUEST,
-                    _ => StatusCode::INTERNAL_SERVER_ERROR,
-                },
-                Json(json!({
-                    "cause": "failed to request token",
-                })),
-            )
-                .into_response(),
-        }
-    }
-}
