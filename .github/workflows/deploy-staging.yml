@@ -22,7 +22,7 @@ jobs:
 
       # see: https://zenn.dev/kt3k/articles/d557cc874961ab
       - name: Restore mtime
-        run: python ./git-restore-mtime.py
+        run: python ./.github/utils/git-restore-mtime.py
 
       - uses: actions/cache@v2
         with:
