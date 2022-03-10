@@ -2,6 +2,7 @@ use anyhow::Context as _;
 use async_redis_session::RedisSessionStore;
 
 use axum::{http::Request, response::Html, routing::get, AddExtensionLayer, Router};
+use sqlx::postgres::PgPoolOptions;
 
 use std::net::SocketAddr;
 use tokio::signal;
@@ -28,6 +29,14 @@ async fn main() -> anyhow::Result<()> {
         std::env::set_var("RUST_LOG", "tispa_backend=debug,tower_http=debug")
     }
     tracing_subscriber::fmt::init();
+
+    let db = PgPoolOptions::new()
+        .max_connections(50)
+        .connect(&std::env::var("DATABASE_URL").context("you must set database url")?)
+        .await
+        .context("could not connect to database_url")?;
+
+    sqlx::migrate!().run(&db).await?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8989));
     info!("listening on {}", addr);
